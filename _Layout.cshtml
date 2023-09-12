@@ -1,0 +1,1208 @@
+﻿@using Microsoft.AspNetCore.Http.Extensions
+@using ExpeditusPro.Models
+@using ExpeditusPro.Models.Providers
+@using ExpeditusPro.Models.Entities
+@using ExpeditusPro.Models.Stores
+@using Squidex.ClientLibrary
+@using ExpeditusPro.Identity
+@using System.Globalization;
+
+@inject ISettingsProvider SettingsProvider
+@inject IHtmlLocalizer<AppResources> T
+@inject ISquidexClient SquidexClientManager
+@*@inject SignInManager<System.Security.Claims.ClaimsPrincipal> SignInManager*@
+@inject SignInManager<UserEntity> SignInManager
+@inject IEntityStore<ProviderEntity> providerStore
+@inject ICaseStore<CaseEntity> caseStore
+@inject IEntityStore<UserEntity> userStore
+@inject IEntityStore<UserActivityEntity> userActivityStore
+@inject IEntityStore<UserRequestEntity> userRequestStore
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+
+@{
+    var userAppURL = Configuration.GetSection("app:userAppURL").Value;
+    var mainAppURL = Configuration.GetSection("app:mainAppURL").Value;
+    var serverURL = @Configuration.GetSection("app")["url"];
+    var settings = await SettingsProvider.GetSettingsAsync();
+    var Culture = CultureInfo.CurrentUICulture.Name;
+    var hasExternalLogins = (await SignInManager.GetExternalAuthenticationSchemesAsync()).Any();
+    var logo = SquidexClientManager.GenerateImageUrl(settings.Logo[0].ToString());
+    var link = User.Identity.IsAuthenticated ?
+            Url.Content("~/") :
+            Url.Content("~/manage");
+    var siteName = settings.SiteName.Value;
+    var shareThisProperty = Context.Request.GetDisplayUrl().Contains("sguser.") ? "641492c5fbfd84001b9fbe58" : "64149720fbfd84001b9fbe5b";
+
+    var providers = await this.providerStore.GetAllAsync();
+    var UserId = ((System.Security.Claims.ClaimsIdentity)User.Identity).Claims.ToList().FirstOrDefault(x => x.Type.Equals("userid", StringComparison.OrdinalIgnoreCase))?.Value.Replace("'", "");
+    if (UserId == null || UserId == string.Empty)
+    {
+        UserId = ((System.Security.Claims.ClaimsIdentity)User.Identity).Claims.ToList().FirstOrDefault(x => x.Type.Equals("sub", StringComparison.OrdinalIgnoreCase))?.Value.Replace("'", "");
+    }
+
+    if (UserId == null || UserId == string.Empty)
+    {
+        UserId = userStore.FindByNameAsync(User.Identity.Name, "").Result.Id;
+    }
+
+    var  UserRoles = ((System.Security.Claims.ClaimsIdentity)User.Identity).Claims.ToList().FirstOrDefault(x => x.Type.Equals("role", StringComparison.OrdinalIgnoreCase))?.Value.Replace("'", "").Split(',').ToHashSet<string>();
+
+    var notifications = await this.userActivityStore.GetAllAsync(new string[] { UserId }, UserRoles);
+    var assignedCases = await this.caseStore.GetNewlyAssignedCasesAsync(new string[]{UserId}, UserRoles);
+
+    var requestsByProviders = new List<UserRequestEntity>();
+    var caseid = "";
+    if(User.IsInRole("CaseManager") || User.IsInRole("SuperController"))
+    {
+        //requestsByProviders = await this.userRequestStore.GetAllAsync(new string[] {  caseid }, UserRoles);
+    }
+   
+}
+
+
+
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, max-scale=1">
+
+    @{
+        string title = siteName;
+        if (ViewData.ContainsKey("Title"))
+        {
+            title = ViewData["Title"].ToString();
+        }
+    }
+    <title>@title</title>
+
+    @*@if (!string.IsNullOrWhiteSpace(settings.BootstrapUrl))
+    {
+    <link rel="stylesheet" href="@settings.BootstrapUrl" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous" />
+    }
+    else
+    {
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous" />
+    }*@
+
+    @*@if (!string.IsNullOrWhiteSpace(settings.StylesUrl))
+    {
+    <link rel="stylesheet" href="@settings.StylesUrl" />
+    }*@
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.3/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+    @*<script src="//widget.time.is/en_gb.js"></script>*@
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jsgrid/1.5.3/jsgrid.min.js"></script>
+    <script type="text/javascript" src="https://canvasjs.com/assets/script/canvasjs.min.js"></script>
+    
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,700" />
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.0.13/css/all.css" integrity="sha384-DNOHZ68U8hZfKXOrtjWvjxusGo9WQnrNx2sqG0tfsghAvtVlRW3tvkXWZh58N9jp" crossorigin="anonymous">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-gH2yIJqKdNHPEq0n4Mqa/HGKIhSkIHeL5AyhkYV8i59U5AR6csBvApHHNl/vI1Bx" crossorigin="anonymous">
+    <link href="~/css/main.min.css" rel="stylesheet">
+    <link href="~/css/responsive.css" rel="stylesheet">
+    <link type="text/css" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jsgrid/1.5.3/jsgrid.min.css">
+    <link type="text/css" rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/jsgrid/1.5.3/jsgrid-theme.min.css">
+  
+</head>
+
+<body class="white-header">
+    @Html.AntiForgeryToken()
+    <header>
+         <div class="container-fluid">
+      <div class="row justify-content-center align-items-center">
+        <div class="col-md-4 col-7">
+                    <div class="side-menu-btn"></div>
+                    <a href="/" class="brand mb-4">
+                        <img src="/images/logo.svg" alt="logo" class="img-fluid">
+                        </a>
+        </div>
+        <div class="col-md-8 col-5">
+          <ul class="header-options">
+            <li>
+              <button class="search-btn">
+                <img src="/images/search-icon.svg" with="23px" alt="" class="img-fluid">
+              </button>
+              <div class="search-form">
+                <button class="hide-search-form"><img src="/images/cross.svg" with="23px" alt=""
+                    class="img-fluid"></button>
+                <form>
+                  <input type="text" placeholder="Search.." name="search">
+                  <button class="searching-btn">
+                    <img src="/images/search-icon.svg" with="23px" alt="" class="img-fluid">
+                  </button>
+                </form>
+              </div>
+            </li>
+            <li>
+                            <div class="time-btn">
+                                <img src="/images/time-icon.svg" alt="icon" class="img-fluid">
+                                <span>
+                                    <span id="hours"></span>
+                                    <span>:</span>
+                                    <span id="minutes"></span>
+
+                                    <span class="weekday" id="day"></span>
+                                    <span id="date"></span>
+                                </span>
+                            </div>
+            </li>
+            <li>
+                            <div class="dropdown">
+
+                                <button type="button" class="notification-btn dropdown-toggle" data-toggle="dropdown">
+                                    <img src="/images/bell-icon.svg" alt="notification" class="img-fluid">
+
+                                    <span>@notifications.Count</span>
+                                </button>
+
+                                <div class="dropdown-menu notifications-content">
+                                    @foreach(var activity in notifications){
+                                            <a class="dropdown-item" logtype="@activity.Data.LogType" href="#">@activity.Data.Title</a>
+                                    }
+                                   
+                                    @*<a class="dropdown-item error-notification" href="#">Red Flags have activated</a>
+                                    <a class="dropdown-item alert-notification" href="#">New Case Has been assigned</a>
+                                    <a class="dropdown-item success-notification" href="#">Case Has been completed</a>*@
+                                    <a class="dropdown-item all-notifications" href="/manage/notifications">View all</a>
+                                </div>
+                            </div>
+
+            </li>
+            <li>
+                            <div class="dropdown ">
+
+                                <button type="button" class="help-btn dropdown-toggle" data-toggle="dropdown">
+                                    <img src="/images/help-icon.svg" alt="help" class="img-fluid">
+                                </button>
+
+
+
+                                <div class="dropdown-menu help-content">
+                                    <a class="dropdown-item" href="mailto:info@expedituspro.com">
+                                        <img src="/images/email.svg" alt="help"
+                                             class="img-fluid">Email Us
+                                    </a>
+                                    <a class="dropdown-item" href="tel:1234567890">
+                                        <img src="/images/call.svg" alt="help"
+                                             class="img-fluid">Call
+                                        us
+                                    </a>
+
+                                </div>
+                            </div>
+
+            </li>
+          </ul>
+          </div>
+        </div>
+        </div>
+    </header>
+
+    <div class="main">
+        <div class="sidenavbar">
+            <ul>
+                <li class="loged-in-user">
+                    <img src="/images/user-photo.png" width="70px" alt="" class="img-fluid">
+                    <div>
+
+                        @if (User.Identity.IsAuthenticated)
+                        {
+                            <h3 class="userName" style="word-break:break-word">@User.Identity.Name</h3>
+                            
+                                @if (User.IsInRole("SuperController"))
+                                {
+                                <h5 class="designation">Super Controller</h5>
+                                }
+                                else if (User.IsInRole("CaseManager"))
+                                {
+                                <h5 class="designation">Case Manager</h5>
+                                }
+                                else if (User.IsInRole("Doctor"))
+                                {
+                                <h5 class="designation">Doctor</h5>
+                                }
+                                else if (User.IsInRole("Therapist"))
+                                {
+                                <h5 class="designation">Therapist</h5>
+                                }
+                                else if (User.IsInRole("Specialist"))
+                                {
+                                <h5 class="designation">Specialist</h5>
+                                }
+                                else if (User.IsInRole("Patient"))
+                                {
+                                    <h5 class="designation">Patient</h5>
+                                }
+                        }
+                    
+                    </div>
+                </li>
+                @if (User.IsInRole("SuperController") || User.IsInRole("CaseManager") || User.IsInRole("Doctor") || User.IsInRole("Therapist") || User.IsInRole("Specialist"))
+                {
+                <li class="active">
+                    <a href="/manage/dashboard">
+                        <img src="/images/dashboard-icon.svg" width="23px" alt=""
+                             class="img-fluid">
+                        Dashboard
+                    </a>
+                </li>
+                
+                    <li>
+                        <a href="/manage/registeredcases">
+                            <img src="/images/cases-icon.svg" width="23px" alt="" class="img-fluid">
+                            All Cases
+                        </a>
+                    </li>
+                }
+                @if (User.IsInRole("Doctor") || User.IsInRole("Therapist") || User.IsInRole("Specialist"))
+                {
+                    <li>
+                        <a href="/manage/patients">
+                            <img src="/images/providers-icon.svg" width="23px" alt="" class="img-fluid">
+                            Patients
+                        </a>
+                    </li>
+                }
+
+                 @if (User.IsInRole("SuperController") || User.IsInRole("CaseManager"))
+                {
+                    <li>
+                        <a href="/manage/caseregistration">
+                            <img src="/images/cases-icon.svg" width="23px" alt="" class="img-fluid">
+                            Register New Case
+                        </a>
+                    </li>
+
+                    <li>
+                        <a href="/manage/searchnpiproviders">
+                            <img src="/images/providers-icon.svg" width="23px" alt="" class="img-fluid">
+                            Search Providers
+                        </a>
+                    </li>
+
+                    <li>
+                        <a href="/manage/enrolledproviders">
+                            <img src="/images/providers-icon.svg" width="23px" alt="" class="img-fluid">
+                            Enrolled Providers
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/manage/patients">
+                            <img src="/images/providers-icon.svg" width="23px" alt="" class="img-fluid">
+                            Patients
+                        </a>
+                    </li>
+                }
+                @if (User.IsInRole("SuperController"))
+                {
+                        <li>
+                            <a href="/manage/casemanagers">
+                                <img src="/images/providers-icon.svg" width="23px" alt="" class="img-fluid">
+                                Case Managers
+                            </a>
+                        </li>
+                        <li>
+                            <a href="/manage/users">
+                                <img src="/images/providers-icon.svg" width="23px" alt="" class="img-fluid">
+                                Users
+                            </a>
+                        </li>
+                }
+                @if (User.IsInRole("Patient")){
+                <li>
+                   
+                    <a href="/manage/casedetail">
+                        <img src="/images/cases-icon.svg" width="23px" alt="" class="img-fluid">
+                           My Case Detail
+                    </a>
+                </li>
+                    <li>
+                        <a href="/manage/enrolledproviders">
+                            <img src="/images/providers-icon.svg" width="23px" alt="" class="img-fluid">
+                            Enrolled Providers
+                        </a>
+                    </li>
+                }
+                <li>
+                    <a href="/manage/appointments">
+                        <img src="/images/appointment-icon.svg" width="23px" alt="" class="img-fluid">
+                        Appointments
+                    </a>
+                </li>
+                <li>
+                    <a href="/manage/chatroom">
+                        <img src="/images/chat-icon.svg" width="23px" alt="" class="img-fluid"> Chat
+                        Rooms
+                    </a>
+                </li>
+                <li>
+                    <a href="/manage/analytics">
+                        <img src="/images/analytics-icon.svg" width="23px" alt="" class="img-fluid">
+                        Analytics
+                    </a>
+                </li>
+
+                <li>
+                    <a href="/manage/notifications">
+                        <img src="/images/bell-icon.svg" width="23px" alt="" class="img-fluid">
+                        Notifications
+                    </a>
+                </li>
+                <li>
+                    @if (User.Identity.IsAuthenticated)
+                    {
+                        <a href="/logout">
+                            <img src="/images/logout-icon.svg" width="23px" alt="" class="img-fluid">
+                            @T["Logout"]
+                        </a>
+                    }
+                   
+                </li>
+
+            </ul>
+        </div>
+        <div class="main-content">
+        @if(User.IsInRole("CaseManager") || User.IsInRole("Doctor") || User.IsInRole("Therapist") || User.IsInRole("Specialist"))
+            {
+            
+               @foreach(var recordedCase in assignedCases){
+                    <div class="notification-bar d-flex justify-content-between align-items-center">
+                    <h5>
+                        <img src="/images/heart.svg" alt="icon"><span id="span@(recordedCase.Id)">
+                           New case has been assigned by @String.Join(", ", recordedCase.Data.CreatedByName)
+                        </span>
+                    </h5>
+                        <button id="btnReviewCase@(recordedCase.Id)" type="button" data-toggle="modal" data-target="#Review-NewCase-modal" data-whatever='@Html.Raw(System.Text.Json.JsonSerializer.Serialize(recordedCase))'
+                             class="primary-btn small">
+                    Review New Case
+                </button>
+                    </div>
+             }
+            }
+
+            @if(User.IsInRole("CaseManager") || User.IsInRole("SuperController"))
+            {
+                @foreach (var request in requestsByProviders)
+                {
+                    <div class="notification-bar d-flex justify-content-between align-items-center" style="background-color:">
+                        <h5>
+                            <img src="/images/heart.svg" alt="icon"><span id="span@(request.Id)">
+                                New request @*for @request.Data.Specia *@ by @String.Join(", ", request.Data.RequestedByList[0].Data.FirstName[Culture])
+                            </span>
+                        </h5>
+                        <button id="btnReviewRequest@(request.Id)" type="button" data-toggle="modal" data-target="#Review-request-modal" data-whatever='@Html.Raw(System.Text.Json.JsonSerializer.Serialize(request))'
+                                class="primary-btn small">
+                            Review New Request
+                        </button>
+                    </div>
+                }
+            }
+
+            <div class="row">
+                @RenderBody()
+        </div>
+        </div>
+ </div>
+
+    <div class="right-sidebar">
+        <div id="countdown">
+            <i class="timer-icon">
+                <img src="/images/timer-icon.svg" with="23px" alt=""
+                     class="img-fluid">
+            </i>
+        </div>
+        <button class="flag-widget-btn">
+            <img class="red-flag" src="/images/flag.svg" width="23px" alt="" class="img-fluid">
+        </button>
+        <div class="flag-widget-container">
+
+            @if (Model.Request.Path.Value.Contains("/manage/casedetail") && !User.IsInRole("Patient"))
+                {
+                @await Html.PartialAsync("~/Pages/manage/PatientRedFlags.cshtml", ((List<RedFlagUserData>)ViewData["CaseRedFlags"]))
+               
+                }
+
+            <div>
+                @if (Model.Request.Path.Value.Contains("/manage/casedetail"))
+                {
+                    @await Html.PartialAsync("~/Pages/manage/AssignedProviders.cshtml", providers)
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="Review-NewCase-modal">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+
+                <button type="button" class="close-btn" data-dismiss="modal">
+                    <img src="/images/cross.svg" alt="close"
+                         width="20" height="20">
+                </button>
+
+              
+                <!-- Modal body -->
+                <div class="modal-body profile-detail-widget">
+                    <div class="row">
+                        <div class="col-lg-12 col-md-12">
+                            <p id="AssignError"></p>
+                        </div>
+                        <div class="col-lg-4 col-md-4 ">
+                            <div class="left-profile-detail-widget">
+                                <img src="/images/patient.jpeg" alt="" class="rounded-circle" width="80" height="80">
+                                <h4 id="caseFullname" class="user-name"></h4>
+                                <h6 id="caseEmail" class="user-email"></h6>
+                                <h5 id="caseNumber" class="usser-id"></h5>
+                                <input type="hidden" id="caseId" />
+                                <h4 id="caseHippa" class="hippa-tag">
+                                    <img src="/images/hipa.png" alt="" class="img-fluid"/>Hippa
+                                    released
+                                </h4>
+                                <div class="upcoming-event-notification">
+                                    <label>Team</label>
+                                    <h5 id="caseManagers"></h5>
+                                    <h5 id="caseProviders"></h5>
+
+                                </div>
+                                <div class="modal-buttons d-flex align-items-center justify-content-center">
+                                    <button id="btnAcceptCase" class="primary-btn" >Accept</button>
+                                    <button id="btnDeclineCase" class="primary-btn del-color" >Decline</button>
+                                </div>
+                            </div>
+                            
+                        </div>
+                        <div class="col-lg-8 col-md-8 right-profile-detail-widget">
+                            <div class="detail-round-box">
+                                <h4>Personal Details</h4>
+                                <div class="row">
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Patient name</label>
+                                        <h5 id="caseFullname2"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Patient email</label>
+                                        <h5 id="caseEmail2"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Gender</label>
+                                        <h5 id="caseGender"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Patient phone</label>
+                                        <h5 id="casePhone"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Date of birth</label>
+                                        <h5 id="caseDOB"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Hand dominance</label>
+                                        <h5 id="caseHandDominance"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Weight</label>
+                                        <h5 id="caseWeight"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Height</label>
+                                        <h5 id="caseHeight"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Calculate body mass Index</label>
+                                        <h5  id="caseBMI" class="red-flag-active"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Job id</label>
+                                        <h5 id="caseJobid">#</h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Job title</label>
+                                        <h5 id="caseJobTitle"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Employer</label>
+                                        <h5 id="caseEmployer"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Do you smoke?</label>
+                                        <h5 id="caseSmoker"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Do you drink alcohol?</label>
+                                        <h5 id="caseAlcoholic"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Social support</label>
+                                        <h5 id="caseSocialSupport"></h5>
+                                    </div>
+                                </div>
+
+                            </div>
+                            <div class="detail-round-box">
+                                <h4>Injury Details</h4>
+                                <div class="row">
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Referring physicians name</label>
+                                        <h5 id="caseRefPhysician"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Injury side</label>
+                                        <h5 id="caseInjurySide"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Date of surgery</label>
+                                        <h5 id="caseDateofSurgery"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Date of injury</label>
+                                        <h5 id="caseDateofInjury"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Primary care physicians name</label>
+                                        <h5 id="casePrimaryPhysician"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Is this work related?</label>
+                                        <h5 id="caseWorkRelated"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>
+                                            Is there a lawyer involved in your
+                                            case?
+                                        </label>
+                                        <h5 id="caseLawyerInvolved" class="red-flag-active"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>
+                                            Any prior or current care for this
+                                            condition
+                                        </label>
+                                        <h5 id="caseCurrentCare"></h5>
+                                    </div>
+                                    <div class="col-md-12">
+                                        <label>Describe your primary problem(s)</label>
+                                        <div class="field-detail">
+                                            @*@if (Model.Case.Data.Injuries != null)
+                                            {
+                                                @foreach (var injury in Model.Case.Data.Injuries)
+                                                {
+                                                    <div class="row">
+
+                                                        <div class="col-lg-4 col-md-4">
+                                                            <label>Injury</label>
+                                                            <h5>@injury.Injury</h5>
+                                                        </div>
+
+                                                        <div class="col-lg-4 col-md-4">
+                                                            <label>BodyPart</label>
+                                                            <h5>@injury.BodyPart</h5>
+                                                        </div>
+
+                                                        <div class="col-lg-4 col-md-4">
+                                                            <label>Diagnosis</label>
+                                                            <h5>@injury.Diagnosis</h5>
+                                                        </div>
+                                                    </div>
+                                                }
+                                            }*@
+
+                                        </div>
+
+                                    </div>
+
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Job id</label>
+                                        <h5 id="jobId"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Job title</label>
+                                        <h5 id="caseJobTitle2"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Employer</label>
+                                        <h5 id="Employer2"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Do you smoke?</label>
+                                        <h5 id="doyouSmoke"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Do you drink alcohol?</label>
+                                        <h5 id="doyoudrinkalcohol"></h5>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Social support</label>
+                                        <h5 id="socialSupport"></h5>
+                                    </div>
+
+                                    <div class="col-md-12">
+                                        <label>Comments / describe</label>
+                                        <div class="field-detail">
+                                            <h5 id="CommentDescription">
+                                                @* Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut
+                                                labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco
+                                                laboris
+                                                nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate. *@
+                                            </h5>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-4 col-md-6">
+                                        <label>Patient name</label>
+                                        <h5 id="caseFullName3"> </h5>
+                                    </div>
+                                    <div class="col-md-12">
+                                        <label>Results of test(s)</label>
+                                        <div class="field-detail">
+                                            <h5 id="ResultsOfTest">
+                                                @* Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut
+                                                labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco
+                                                laboris
+                                                nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate. *@
+                                            </h5>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="detail-round-box">
+                                <h4>Patient Medication History</h4>
+                                <div class="row">
+                                    <div class="col-lg-6 col-md-6">
+                                        <label>General health status (circle one)</label>
+                                        <h5 class="red-flag-active" id="Genralhelthstatus"></h5>
+                                    </div>
+                                    <div class="col-lg-6 col-md-6">
+                                        <label>Do you exercise regularly?</label>
+                                        <h5 id="Doyouexerciseregurlarly"></h5>
+                                    </div>
+                                    @* // same *@
+                                    <div class="col-md-12">
+                                        <label>Please check if any recent symptoms</label>
+                                        <h5 id="recentsymptoms">
+                                            
+                                            @* <span>Numbness/tingling</span>
+                                            <span>Nausea/vomiting</span>
+                                            <span class="red-flag-active">Significant weight loss/gain</span> *@
+                                        </h5>
+                                    </div>
+                                    
+                                    <div class="col-md-12">
+                                        <label>Do you take any medication (prescription or over the counter) comments section</label>
+                                        <h5 id="DoYoutakeanymedication">                                            
+                                         </h5>
+                                    </div>
+                                    @* same *@
+                                    <div class="col-md-12">
+                                        <label>Please check if any recent symptoms</label>
+                                        <h5 id="recentsymtoms2"></h5>
+                                            
+                                           @*  <span>Rheumatoid arthritis</span>
+                                            <span>Osteoarthritis</span>
+                                            <span class="red-flag-active">Cancer</span> *@
+                                        
+                                    </div>
+                                    <div class="col-md-12">
+                                        <label>Rank your pain for the past two weeks on this 0-10 scale</label>
+                                        <h5 id="RankYourPain"></h5>
+                                    </div>
+                                    @* // *@
+                                    <div class="col-md-12">
+                                        <label>What aggravates your pain (circle all that apply)?</label>
+                                        <h5 id="aggravatesyourpain"> </h5>
+                                           
+                                       
+                                    </div>
+                                    @* //same *@
+                                    <div class="col-md-12">
+                                        @* <label>Please check if any recent symptoms</label> *@
+                                        @* <h5 id="recentsymptoms3"></h5> *@
+                                           @*  <span>Rest</span>
+                                            <span>Changing positions</span>
+                                            <span>Medications</span> *@
+                                        
+                                    </div>
+                                    <div class="col-lg-6 col-md-6">
+                                        <label>Quality of Sleep?</label>
+                                        <h5 id="QualityofSleep"></h5>
+                                    </div>
+                                    <div class="col-lg-6 col-md-6">
+                                        <label>Does your pain keep you up at night?</label>
+                                        <h5 id="DoesYourPain"></h5>
+                                    </div>
+                                    <div class="col-lg-6 col-md-6">
+                                        <label>Consent to treat?</label>
+                                        <h5 id="Consenttotreat"></h5>
+                                    </div>
+                                    <div class="col-lg-6 col-md-6">
+                                        <label>HIPPA release?</label>
+                                        <h5 id="HIPPArelease"></h5>
+                                    </div>
+
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+ 
+
+    @RenderSection("Scripts", required: false)
+
+    
+    
+  <script type="text/javascript">
+ 
+
+  // // ---------------right side bar timer widget---------------------------------------------------
+  //time_is_widget.init({ India_z424: { template: "TIME<br>DATE", time_format: "12hours:minutesAMPM", date_format: "dayname, monthname dnum, year" } });
+
+
+
+  // --------------header search box -----------------------------------------------
+  $(".search-btn").click(function () {
+    $(".search-form").addClass("intro");
+  });
+  $(".hide-search-form").click(function () {
+    $(".search-form").removeClass("intro");
+  });
+
+  // --------------flag widget poup in phone ------------------------------------------
+  $(".flag-widget-btn").click(function () {
+    $(".flag-widget-container").addClass("flag-widget-show");
+  });
+  $(".hide-flag-widget-btn").click(function () {
+    $(".flag-widget-container").removeClass("flag-widget-show");
+  });
+
+
+  // --------------sidemenu toggle button mobile -----------------------------------------------
+  $('.side-menu-btn').click(function () {
+    $(this).toggleClass('active');
+    $('.sidenavbar').toggleClass('sidenavbar-open');
+  });
+
+
+
+  // ----------------Timer ---------------------------------------------------
+
+
+  (function ($) {
+
+    // Number of seconds in every time division
+    var days = 24 * 60 * 60,
+      hours = 60 * 60,
+      minutes = 60;
+
+    // Creating the plugin
+    $.fn.countdown = function (prop) {
+
+      var options = $.extend({
+        callback: function () { },
+        timestamp: 0
+      }, prop);
+
+      var left, d, h, m, s, positions;
+
+      // Initialize the plugin
+      init(this, options);
+
+      positions = this.find('.position');
+
+      (function tick() {
+
+        // Time left
+        left = Math.floor((options.timestamp - (new Date())) / 1000);
+
+        if (left < 0) {
+          left = 0;
+        }
+
+        // Number of days left
+        d = Math.floor(left / days);
+        updateDuo(0, 1, d);
+        left -= d * days;
+
+        // Number of hours left
+        h = Math.floor(left / hours);
+        updateDuo(2, 3, h);
+        left -= h * hours;
+
+        // Number of minutes left
+        m = Math.floor(left / minutes);
+        updateDuo(4, 5, m);
+        left -= m * minutes;
+
+        // Number of seconds left
+        s = left;
+        updateDuo(6, 7, s);
+
+        // Calling an optional user supplied callback
+        options.callback(d, h, m, s);
+
+        // Scheduling another call of this function in 1s
+        setTimeout(tick, 1000);
+      })();
+
+      // This function updates two digit positions at once
+      function updateDuo(minor, major, value) {
+        switchDigit(positions.eq(minor), Math.floor(value / 10) % 10);
+        switchDigit(positions.eq(major), value % 10);
+      }
+
+      return this;
+    };
+
+
+    function init(elem, options) {
+      elem.addClass('countdownHolder');
+
+      // Creating the markup inside the container
+      $.each(['Days', 'Hours', 'Minutes', 'Seconds'], function (i) {
+        $('<span class="count' + this + '">').html(
+          '<span class="position">\
+					<span class="digit static">0</span>\
+				</span>\
+				<span class="position">\
+					<span class="digit static">0</span>\
+				</span>'
+        ).appendTo(elem);
+
+        if (this != "Seconds") {
+          elem.append('<span class="countDiv countDiv' + i + '"></span>');
+        }
+      });
+
+    }
+
+    // Creates an animated transition between the two numbers
+    function switchDigit(position, number) {
+
+      var digit = position.find('.digit')
+
+      if (digit.is(':animated')) {
+        return false;
+      }
+
+      if (position.data('digit') == number) {
+        // We are already showing this number
+        return false;
+      }
+
+      position.data('digit', number);
+
+      var replacement = $('<span>', {
+        'class': 'digit',
+        css: {
+          top: '-2.1em',
+          opacity: 0
+        },
+        html: number
+      });
+
+      // The .static class is added when the animation
+      // completes. This makes it run smoother.
+
+      digit
+        .before(replacement)
+        .removeClass('static')
+        .animate({ top: '2.5em', opacity: 0 }, 'fast', function () {
+          digit.remove();
+        })
+
+      replacement
+        .delay(100)
+        .animate({ top: 0, opacity: 1 }, 'fast', function () {
+          replacement.addClass('static');
+        });
+    }
+  })(jQuery);
+
+
+  // other one
+  $(function () {
+
+            $('a.dropdown-item[logtype="Informational"]').addClass('info-notification');
+            $('a.dropdown-item[logtype=""]').addClass('info-notification');
+            $('a.dropdown-item[logtype="RedFlag"]').addClass('error-notification');
+            $('a.dropdown-item[logtype="Warning"]').addClass('alert-notification');
+            $('a.dropdown-item[logtype="Change"]').addClass('success-notification');
+
+    var note = $('#note'),
+      ts = new Date(2012, 0, 1),
+      newYear = true;
+
+    if ((new Date()) > ts) {
+      // The new year is here! Count towards something else.
+      // Notice the *1000 at the end - time must be in milliseconds
+      ts = (new Date()).getTime() + 10 * 24 * 60 * 60 * 1000;
+      newYear = false;
+    }
+
+   var splitted = location.pathname.split("/");
+   var currentpath = splitted[0] + "/" + splitted[1] + "/" + splitted[2];
+    $('.sidenavbar ul li a').each(function(){
+        var $this = $(this);
+        // if the current path is like this link, make it active
+              if ($this.attr('href').indexOf(currentpath) !== -1) {
+                $('.sidenavbar ul li').removeClass('active');
+            $this.parent().addClass('active');
+        }else if(currentpath.includes('casedetail')){
+                    $('.sidenavbar ul li').removeClass('active');
+                    $('.sidenavbar ul li a[href="/manage/registeredcases"]').parent().addClass('active')
+        }
+    })
+    
+    $('#countdown').countdown({
+      timestamp: ts,
+      callback: function (days, hours, minutes, seconds) {
+
+        var message = "";
+
+        message += days + " day" + (days == 1 ? '' : 's') + ", ";
+        message += hours + " hour" + (hours == 1 ? '' : 's') + ", ";
+        message += minutes + " minute" + (minutes == 1 ? '' : 's') + " and ";
+        message += seconds + " second" + (seconds == 1 ? '' : 's') + " <br />";
+
+        if (newYear) {
+          message += "left until the new year!";
+        }
+        else {
+          message += "left to 10 days from now!";
+        }
+
+        note.html(message);
+      }
+    });
+    
+    var caseData;
+
+        $('#Review-NewCase-modal').on('shown.bs.modal', function (event) {
+        var button = $(event.relatedTarget); // Button that triggered the modal
+        caseData = button.data('whatever'); // Extract info from data-* attributes
+        console.log(caseData);
+        var modal = $(this);
+        //modal.find('.modal-title').text('New message to ');
+                //modal.find('.modal-body #caseFullname').val(caseData.Data.Name.@Culture);
+                //modal.find('.modal-body #caseFullname2').val(caseData.Data.Name.@Culture);
+                //modal.find('.modal-body #caseEmail').val(caseData.Data.Email);
+                //modal.find('.modal-body #caseEmail2').val(caseData.Data.Email);
+                //modal.find('.modal-body #caseId').val(caseData.Data.CaseNumber);
+                $("#caseFullname").text(caseData.Data.Name.@Culture);
+                $("#caseFullname2").text(caseData.Data.Name.@Culture);
+                $("#caseEmail").text(caseData.Data.Email);
+                $("#caseEmail2").text(caseData.Data.Email);
+                $("#caseNumber").text(caseData.Data.CaseNumber);
+                $("#caseHippa").text(caseData.Data.HIPPARelease == true ? 'HIPPA Release' : 'No HIPPA Release');
+                if (caseData.Data.CaseManagerList != null) {
+                    $("#caseManagers").text(caseData.Data.CaseManagerList[0].Data.FullName.@Culture);
+                }
+
+                //$("#caseManagers").text(caseData.Data.CaseManagerList[0].Data.FullName.@Culture);
+                // var doctors = '', specialists = '', therapists = '';
+                // for(var i=0; i < caseData.Data.DoctorList.length; i++){                    
+                //    doctors += caseData.Data.DoctorList[i].Data.NamePrefix + ' ' + caseData.Data.DoctorList[i].Data.FirstName['@Culture'] + ' ' + caseData.Data.DoctorList[i].Data.MiddleName['@Culture'] + ' ' + caseData.Data.DoctorList[i].Data.LastName['@Culture'];
+                // }
+
+                // for (var i = 0; i < caseData.Data.SpecialistList.length; i++) {
+                //    specialists += caseData.Data.SpecialistList[i].Data.NamePrefix + ' ' + caseData.Data.SpecialistList[i].Data.FirstName['@Culture'] + ' ' + caseData.Data.SpecialistList[i].Data.MiddleName['@Culture'] + ' ' + caseData.Data.SpecialistList[i].Data.LastName['@Culture'];
+                // }
+
+                // for (var i = 0; i < caseData.Data.TherapistList.length; i++) {
+                //    therapists += caseData.Data.TherapistList[i].Data.NamePrefix + ' ' + caseData.Data.TherapistList[i].Data.FirstName['@Culture'] + ' ' + caseData.Data.TherapistList[i].Data.MiddleName['@Culture'] + ' ' + caseData.Data.TherapistList[i].Data.LastName['@Culture'];
+                // }
+
+               // $("#caseProviders").text(doctors);
+               
+
+                $("#caseId").text(caseData.Id);
+                $("#caseGender").text(caseData.Data.Gender.@Culture);
+                $("#casePhone").text(caseData.Data.Phone.@Culture);
+                $("#caseDOB").text(caseData.Data.Dateofbirth.@Culture);
+                $("#caseHandDominance").text(caseData.Data.HandDominance.@Culture);
+                $("#caseWeight").text(caseData.Data.Weight.@Culture + " Kgs");
+                $("#caseHeight").text(caseData.Data.Height.@Culture + " cms");
+                $("#caseBMI").text(caseData.Data.BodyMassIndex + " kg/m2");
+                $("#caseJobid").text(caseData.Data.JobId.@Culture);
+                $("#caseJobTitle").text(caseData.Data.JobTitle.@Culture);
+                $("#caseEmployer").text(caseData.Data.Employer.@Culture);
+                $("#caseSmoker").text(caseData.Data.IsSmoker);
+                $("#caseAlcoholic").text(caseData.Data.IsAlcoholic);
+                $("#caseSocialSupport").text(caseData.Data.SocialSupport);
+                $("#caseRefPhysician").text(caseData.Data.ReferringPhysicianName.@Culture);
+                $("#caseInjurySide").text(caseData.Data.InjurySide);
+                $("#caseDateofSurgery").text(caseData.Data.DateofSurgery);
+                $("#caseDateofInjury").text(caseData.Data.DateofInjury);
+                $("#casePrimaryPhysician").text(caseData.Data.PrimaryCarePhysiciansName.@Culture);
+                $("#caseWorkRelated").text(caseData.Data.IsInjuryWorkRelated);
+                $("#caseLawyerInvolved").text(caseData.Data.IsLawyerInvolved);
+                $("#caseCurrentCare").text(caseData.Data.CurrentCareforInjury);
+                $("#caseJobTitle2").text(caseData.Data.JobTitle.@Culture);
+                // $("#caseProviders").text(caseData.Data.Provider);
+                $("#jobId").text(caseData.Data.JobId.@Culture);
+                $("#Employer2").text(caseData.Data.Employer.@Culture);
+                $("#doyouSmoke").text(caseData.Data.IsSmoker);
+                $("#doyoudrinkalcohol").text(caseData.Data.IsAlcoholic);
+                $("#socialSupport").text(caseData.Data.SocialSupport);
+                $("#CommentDescription").text(caseData.Data.InjuryDescription.@Culture);
+                $("#caseFullName3").text(caseData.Data.Name.@Culture);
+                $("#ResultsOfTest").text(caseData.Data.TestResultsDescription.@Culture);
+                $("#Genralhelthstatus").text(caseData.Data.GeneralHealthStatus);
+                $("#Doyouexerciseregurlarly").text(caseData.Data.ExerciseRegularly);
+                $("#RankYourPain").text(caseData.Data.PainScalePast2Weeks);
+                $("#QualityofSleep").text(caseData.Data.SleepQuality);
+                $("#DoesYourPain").text(caseData.Data.PainKeepsUpAtNight);
+                $("#Consenttotreat").text(caseData.Data.ConsenttoTreat);
+                $("#HIPPArelease").text(caseData.Data.HIPPARelease);
+                // $("#DoYoutakeanymedication").text(caseData.Data.Medications);
+
+                if (caseData.Data.Medications != null) {
+                    for (var i = 0; i < caseData.Data.Medications.length; i++) {
+                        $("#DoYoutakeanymedication").append('<span>' + caseData.Data.Medications[i].Name + '</span>');
+                    }
+                } 
+            console.log(caseData);
+                // if (caseData.Data.recentsymptoms != null) {
+                //     for (var i = 0; i < caseData.Data.recentsymptoms.length; i++) {
+                //         $("#recentsymtoms").append('<span  class="red-flag-active">' + caseData.Data.recentsymptoms[i].name + '</span>');
+                //     }
+                // }
+                if (caseData.Data.RecentSymptoms != null) {
+                    for (var i = 0; i < caseData.Data.RecentSymptoms.length; i++) {
+                        $("#recentsymptoms").append('<span class="red-flag-active">' + caseData.Data.RecentSymptoms[i].Data.Name.@Culture + '</span>');
+                    }
+                }
+                if (caseData.Data.RecentSymptoms != null) {
+                    for (var i = 0; i < caseData.Data.RecentSymptoms.length; i++) {
+                        $("#recentsymtoms2").append('<span class="red-flag-active">' + caseData.Data.RecentSymptoms[i].Data.Name.@Culture + '</span>');
+                    }
+                }
+                if (caseData.Data.ActivitiesAggravatesPain != null) {
+                    for (var i = 0; i < caseData.Data.ActivitiesAggravatesPain.length; i++) {
+                        $("#aggravatesyourpain").append('<span class="red-flag-active">' + caseData.Data.ActivitiesAggravatesPain[i] + '</span>');
+                    }
+                }
+
+                // if (caseData.Data.ActivitiesAggravatesPainList != null) {
+                //     for (var i = 0; i < caseData.Data.ActivitiesAggravatesPainList.length; i++) {
+                //         $("#aggravatesyourpain").append('<span class="red-flag-active">' + caseData.Data.ActivitiesAggravatesPainList[i].Data.Name.@Culture + '</span>');
+                //     }
+                // }
+
+
+            });
+
+            $("#btnAcceptCase").click(function () {
+                $.ajax({
+                    url: "/api/AcceptCase?caseid=" + caseData.Id, success: function (result) {
+                        $('#span' + caseData.Id).html("Case has been successfully accepted.");
+                        $('#btnReviewCase' + caseData.Id).hide();
+                        $('#Review-NewCase-modal').modal('hide');
+                    },
+                    error : function(jqXHR, textStatus, error){
+                        $("#AssignError").text("There is an issue in accepting the case. Try after sometime.");
+                    }
+                });
+            });
+
+            
+            $("#btnDeclineCase").click(function () {
+                $.ajax({
+                    url: "/api/DeclineCase?caseid=" + caseData.Id, success: function (result) {
+                        //$("#div1").html(result);
+                        $('#span' + caseData.Id).html("Case has been successfully declined.");
+                        $('#btnReviewCase' + caseData.Id).hide();
+                        $('#Review-NewCase-modal').modal('hide');
+                    }, error : function(jqXHR, textStatus, error){
+                         $("#AssignError").text("There is an issue in declining the case. Try after sometime."); 
+                    }
+                });
+            });
+  });
+
+
+  // ---------------fixed header---------------------------------------------------
+  $(window).scroll(function () {
+    var scroll = $(window).scrollTop();
+
+    if (scroll >= 10) {
+      $("body").addClass("fixHeader");
+    } else {
+      $("body").removeClass("fixHeader");
+    }
+  });
+
+        const hours = document.getElementById("hours");
+        const minutes = document.getElementById("minutes");
+        const seconds = document.getElementById("seconds");
+        const date = document.getElementById("date");
+        const today = document.getElementById("day");
+
+        const checkTime = function (time) {
+            return (time = time < 10 ? "0" + time : time);
+        };
+
+        let weekday = [
+            "Sunday",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+        ][new Date().getDay()];
+
+        const displayDate = function () {
+            const now = new Date();
+            console.log(now);
+            const year = now.getFullYear();
+            const month = now.toLocaleString("en-us", { month: "long" });
+            const day = now.getDate();
+
+            console.log(now.toDateString());
+            date.innerHTML = month.toUpperCase() + " " + day + " " +  year ;
+            today.innerHTML = weekday.toUpperCase();
+        };
+        displayDate();
+
+        const displayTime = function () {
+            const tick = function () {
+                const now = new Date();
+
+                const hrs = now.getHours();
+                const mins = now.getMinutes();
+                const sec = now.getSeconds();
+
+                hours.innerHTML = checkTime(hrs);
+                minutes.innerHTML = checkTime(mins);
+                // seconds.innerHTML = `${checkTime(sec)}`;
+            };
+            tick();
+            setInterval(tick, 1000);
+        };
+        displayTime();
+
+    </script>
+
+    @if (!string.IsNullOrWhiteSpace(settings.GoogleAnalyticsId))
+    {
+        <script async src="https://www.googletagmanager.com/gtag/js?id=@settings.GoogleAnalyticsId"></script>
+        <script>
+            window.dataLayer = window.dataLayer || [];
+            function gtag() {
+                dataLayer.push(arguments);
+            }
+            gtag('js', new Date());
+            gtag('config', '@settings.GoogleAnalyticsId', { 'anonymize_ip': true });
+        </script>
+    }
+    
+ 
+
+</body>
+</html>
